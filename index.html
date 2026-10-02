@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Console Trade Manager</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+<style>
+*{box-sizing:border-box}body{font:14px system-ui,sans-serif;margin:0;background:#f4f5f7;color:#1c1e21}
+header{display:flex;justify-content:space-between;align-items:center;background:#1f2937;color:#fff;padding:12px 20px}
+main{padding:16px;max-width:1300px;margin:auto}
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:14px}
+.card{background:#fff;border-radius:8px;padding:10px 12px;box-shadow:0 1px 2px #0002}
+.card small{color:#667}.card b{display:block;font-size:17px;margin-top:2px}
+.bar{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px}
+input,select,textarea,button{font:inherit;padding:7px 9px;border:1px solid #ccd;border-radius:6px;background:#fff}
+button{cursor:pointer;background:#2563eb;color:#fff;border:0}button.g{background:#6b7280}button.r{background:#dc2626}
+.wrap{overflow-x:auto;background:#fff;border-radius:8px;box-shadow:0 1px 2px #0002}
+table{border-collapse:collapse;width:100%;min-width:1000px}
+th,td{padding:7px 8px;border-bottom:1px solid #eee;text-align:left;white-space:nowrap}
+th{background:#f9fafb;font-size:12px;text-transform:uppercase;color:#556}
+td.n{text-align:right}.pos{color:#15803d}.neg{color:#b91c1c}
+.tag{padding:2px 8px;border-radius:10px;font-size:12px}.sold{background:#dcfce7}.pending{background:#fef3c7}
+img.th{width:34px;height:34px;object-fit:cover;border-radius:4px;vertical-align:middle;margin-right:6px}
+dialog{border:0;border-radius:10px;padding:18px;width:min(640px,96vw);max-height:92vh}
+dialog::backdrop{background:#0006}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}.grid label{display:flex;flex-direction:column;font-size:12px;color:#556;gap:3px}
+.full{grid-column:1/-1}.photos img{width:80px;height:80px;object-fit:cover;border-radius:6px;margin:4px}
+.photos span{position:relative;display:inline-block}.photos b{position:absolute;right:6px;top:4px;background:#dc2626;color:#fff;border-radius:50%;width:18px;height:18px;text-align:center;cursor:pointer;font-size:12px}
+#login{max-width:320px;margin:15vh auto;background:#fff;padding:20px;border-radius:10px;display:flex;flex-direction:column;gap:10px}
+.printhead{display:none}
+@media print{header,.bar,.noprint,.cards.nop{display:none!important}body{background:#fff}.printhead{display:block;margin-bottom:10px}
+.wrap{box-shadow:none}table{min-width:0;font-size:11px}th,td{padding:4px}}
+</style></head><body>
+
+<div id="login" style="display:none">
+  <h3 style="margin:0">Console Trade Manager</h3>
+  <input id="em" type="email" placeholder="Email"><input id="pw" type="password" placeholder="Password">
+  <button onclick="signIn()">Login</button><small id="err" class="neg"></small>
+</div>
+
+<div id="app" style="display:none">
+<header><b>🎮 Console Trade Manager</b><button class="g" onclick="sb.auth.signOut().then(()=>location.reload())">Logout</button></header>
+<main>
+  <div class="printhead"><h2 style="margin:0">Business Report</h2><div id="phInfo"></div></div>
+  <div class="cards" id="cards"></div>
+  <div class="bar">
+    <input id="q" placeholder="Search item / client" oninput="render()">
+    <select id="fs" onchange="render()"><option value="">All status</option><option>pending</option><option>sold</option></select>
+    <select id="ft" onchange="render()"><option value="">All types</option><option value="own">Own deals</option><option value="commission">Commission</option></select>
+    <input id="fd" type="date" onchange="render()" title="From"><input id="td" type="date" onchange="render()" title="To">
+    <button onclick="openForm()">+ New deal</button><button class="g" onclick="doPrint()">🖨 Print report</button>
+  </div>
+  <div class="wrap"><table><thead><tr>
+    <th>Date</th><th>Type</th><th>Item</th><th>Buy</th><th>Sell</th><th>Fuel</th><th>Repair</th><th>Commission</th><th>OLX 1%</th><th>Profit</th><th>Welfare 5%</th><th>Status</th><th class="noprint">OLX paid</th><th class="noprint">Welfare paid</th><th class="noprint"></th>
+  </tr></thead><tbody id="rows"></tbody></table></div>
+</main></div>
+
+<dialog id="dlg"><h3 id="dt" style="margin-top:0">Deal</h3>
+<div class="grid">
+  <label>Deal type<select id="deal_type" onchange="toggleType()"><option value="own">Own (buy &amp; sell)</option><option value="commission">Commission (for client)</option></select></label>
+  <label>Status<select id="status"><option value="pending">pending</option><option value="sold">sold</option></select></label>
+  <label>Category<input id="category" list="cats"></label>
+  <label>Company<input id="company" list="cos"></label>
+  <label class="full">Model<input id="model"></label>
+  <label class="own">Buying price<input id="buy_price" type="number"></label>
+  <label>Selling price<input id="sell_price" type="number"></label>
+  <label>Fuel cost<input id="fuel_cost" type="number"></label>
+  <label>Repair cost<input id="repair_cost" type="number"></label>
+  <label class="com">Commission mode<select id="commission_mode"><option value="fixed">Fixed amount</option><option value="percent">% of selling price</option></select></label>
+  <label class="com">Commission value<input id="commission_value" type="number"></label>
+  <label class="com">Client name<input id="client_name"></label>
+  <label class="com">Client phone<input id="client_phone"></label>
+  <label>Buy date<input id="buy_date" type="date"></label>
+  <label>Sell date<input id="sell_date" type="date"></label>
+  <label><span><input id="olx_paid" type="checkbox"> OLX fee paid</span></label>
+  <label><span><input id="welfare_paid" type="checkbox"> Welfare paid</span></label>
+  <label class="full">Notes<textarea id="notes" rows="2"></textarea></label>
+  <div class="full"><label>Photos<input id="pic" type="file" accept="image/*" multiple onchange="upload(this)"></label><div class="photos" id="ph"></div></div>
+</div>
+<div style="display:flex;gap:8px;margin-top:14px;justify-content:flex-end">
+  <button class="r" id="delBtn" onclick="del()">Delete</button><button class="g" onclick="dlg.close()">Cancel</button><button onclick="save()">Save</button>
+</div></dialog>
+<datalist id="cats"><option>Console</option><option>Controller</option><option>Game</option><option>Accessory</option></datalist>
+<datalist id="cos"><option>Sony</option><option>Microsoft</option><option>Nintendo</option><option>Sega</option></datalist>
+
+<script>
+// ===== PASTE YOUR SUPABASE KEYS (Project Settings > API) =====
+const SUPABASE_URL = 'https://supabase.com/dashboard/project/ehwcncijcylkfedbpbdv/settings/api-keys';
+const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVod2NuY2lqY3lsa2ZlZGJwYmR2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTA5Mzg2NTksImV4cCI6MjEwNjUxNDY1OX0.bg5lSgbl5OKSFctPpFjSBCfzR9eKywMTUIFYao4zFpw';
+// =============================================================
+const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+const $ = id => document.getElementById(id);
+const FIELDS = ['deal_type','status','category','company','model','buy_price','sell_price','fuel_cost','repair_cost','commission_mode','commission_value','client_name','client_phone','buy_date','sell_date','notes'];
+const NUMS = ['buy_price','sell_price','fuel_cost','repair_cost','commission_value'];
+let deals = [], cur = null, photos = [], uid = null;
+const n = v => +v || 0, rs = v => 'Rs ' + Math.round(v).toLocaleString();
+const esc = s => (s || '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+// profit rules: own = sell - buy - fuel - repair - OLX | commission = commission - fuel - repair - OLX
+function calc(d) {
+  const sell = n(d.sell_price), olx = sell * 0.01;
+  const comm = d.deal_type === 'commission' ? (d.commission_mode === 'percent' ? sell * n(d.commission_value) / 100 : n(d.commission_value)) : 0;
+  const income = d.deal_type === 'commission' ? comm : sell - n(d.buy_price);
+  const profit = income - n(d.fuel_cost) - n(d.repair_cost) - olx;
+  const welfare = Math.max(profit, 0) * 0.05;
+  return { olx, comm, profit, welfare, net: profit - welfare };
+}
+
+async function signIn() {
+  const { error } = await sb.auth.signInWithPassword({ email: $('em').value, password: $('pw').value });
+  if (error) $('err').textContent = error.message; else start();
+}
+async function start() {
+  const { data } = await sb.auth.getSession();
+  if (!data.session) { $('login').style.display = 'flex'; $('app').style.display = 'none'; return; }
+  uid = data.session.user.id; $('login').style.display = 'none'; $('app').style.display = 'block'; load();
+}
+async function load() {
+  const { data, error } = await sb.from('deals').select('*').order('created_at', { ascending: false });
+  if (error) return alert(error.message);
+  deals = data; render();
+}
+const dateOf = d => d.sell_date || d.buy_date || (d.created_at || '').slice(0, 10);
+function filtered() {
+  const q = $('q').value.toLowerCase(), s = $('fs').value, t = $('ft').value, f = $('fd').value, to = $('td').value;
+  return deals.filter(d => (!s || d.status === s) && (!t || d.deal_type === t)
+    && (!q || [d.category, d.company, d.model, d.client_name].join(' ').toLowerCase().includes(q))
+    && (!f || dateOf(d) >= f) && (!to || dateOf(d) <= to));
+}
+function render() {
+  const list = filtered(), sold = list.filter(d => d.status === 'sold');
+  let T = { sales: 0, exp: 0, olx: 0, profit: 0, wel: 0, net: 0, olxDue: 0, welDue: 0 };
+  sold.forEach(d => { const c = calc(d);
+    T.sales += n(d.sell_price); T.exp += n(d.fuel_cost) + n(d.repair_cost); T.olx += c.olx; T.profit += c.profit; T.wel += c.welfare; T.net += c.net;
+    if (!d.olx_paid) T.olxDue += c.olx; if (!d.welfare_paid) T.welDue += c.welfare; });
+  const stock = list.filter(d => d.status === 'pending' && d.deal_type === 'own').reduce((a, d) => a + n(d.buy_price), 0);
+  const card = (l, v, cls = '') => `<div class="card"><small>${l}</small><b class="${cls}">${v}</b></div>`;
+  $('cards').innerHTML = card('Sold', sold.length) + card('Pending', list.length - sold.length) + card('Stock value (pending)', rs(stock))
+    + card('Total sales', rs(T.sales)) + card('Fuel + repair', rs(T.exp)) + card('OLX fees', rs(T.olx)) + card('Profit', rs(T.profit), T.profit < 0 ? 'neg' : 'pos')
+    + card('Welfare total', rs(T.wel)) + card('Net after welfare', rs(T.net), T.net < 0 ? 'neg' : 'pos') + card('OLX unpaid', rs(T.olxDue), 'neg') + card('Welfare unpaid', rs(T.welDue), 'neg');
+  $('rows').innerHTML = list.map(d => { const c = calc(d), isC = d.deal_type === 'commission';
+    const img = d.photos && d.photos[0] ? `<img class="th" src="${d.photos[0]}">` : '';
+    return `<tr><td>${dateOf(d)}</td><td>${isC ? 'Commission' : 'Own'}</td>
+    <td>${img}${esc(d.category)} ${esc(d.company)} ${esc(d.model)}${isC && d.client_name ? '<br><small>Client: ' + esc(d.client_name) + '</small>' : ''}</td>
+    <td class="n">${isC ? '-' : rs(n(d.buy_price))}</td><td class="n">${rs(n(d.sell_price))}</td><td class="n">${rs(n(d.fuel_cost))}</td><td class="n">${rs(n(d.repair_cost))}</td>
+    <td class="n">${isC ? rs(c.comm) : '-'}</td><td class="n">${rs(c.olx)}</td>
+    <td class="n ${c.profit < 0 ? 'neg' : 'pos'}">${rs(c.profit)}</td><td class="n">${rs(c.welfare)}</td>
+    <td><span class="tag ${d.status}">${d.status}</span></td>
+    <td class="noprint"><input type="checkbox" ${d.olx_paid ? 'checked' : ''} onchange="tog('${d.id}','olx_paid',this.checked)"></td>
+    <td class="noprint"><input type="checkbox" ${d.welfare_paid ? 'checked' : ''} onchange="tog('${d.id}','welfare_paid',this.checked)"></td>
+    <td class="noprint"><button onclick="openForm('${d.id}')">Edit</button></td></tr>`; }).join('')
+    || '<tr><td colspan="15">No deals</td></tr>';
+}
+async function tog(id, f, v) { await sb.from('deals').update({ [f]: v }).eq('id', id); const d = deals.find(x => x.id === id); d[f] = v; render(); }
+
+function toggleType() {
+  const c = $('deal_type').value === 'commission';
+  document.querySelectorAll('.com').forEach(e => e.style.display = c ? '' : 'none');
+  document.querySelectorAll('.own').forEach(e => e.style.display = c ? 'none' : '');
+}
+function openForm(id) {
+  cur = id ? deals.find(d => d.id === id) : null;
+  const d = cur || { deal_type: 'own', status: 'pending', commission_mode: 'fixed', buy_date: new Date().toISOString().slice(0, 10), photos: [] };
+  FIELDS.forEach(f => $(f).value = d[f] ?? '');
+  $('olx_paid').checked = !!d.olx_paid; $('welfare_paid').checked = !!d.welfare_paid;
+  photos = [...(d.photos || [])]; showPhotos(); toggleType();
+  $('delBtn').style.display = cur ? '' : 'none'; $('dt').textContent = cur ? 'Edit deal' : 'New deal'; $('dlg').showModal();
+}
+function showPhotos() {
+  $('ph').innerHTML = photos.map((u, i) => `<span><img src="${u}"><b onclick="photos.splice(${i},1);showPhotos()">×</b></span>`).join('');
+}
+async function upload(inp) {
+  for (const f of inp.files) {
+    const path = `${uid}/${Date.now()}-${f.name.replace(/[^\w.]/g, '_')}`;
+    const { error } = await sb.storage.from('photos').upload(path, f);
+    if (error) { alert(error.message); continue; }
+    photos.push(sb.storage.from('photos').getPublicUrl(path).data.publicUrl);
+  }
+  inp.value = ''; showPhotos();
+}
+async function save() {
+  const row = {}; FIELDS.forEach(f => row[f] = NUMS.includes(f) ? n($(f).value) : ($(f).value || null));
+  row.olx_paid = $('olx_paid').checked; row.welfare_paid = $('welfare_paid').checked; row.photos = photos;
+  row.deal_type = $('deal_type').value; row.status = $('status').value; row.commission_mode = $('commission_mode').value;
+  if (row.status === 'sold' && !row.sell_date) row.sell_date = new Date().toISOString().slice(0, 10);
+  const { error } = cur ? await sb.from('deals').update(row).eq('id', cur.id) : await sb.from('deals').insert(row);
+  if (error) return alert(error.message);
+  $('dlg').close(); load();
+}
+async function del() {
+  if (!confirm('Delete this deal?')) return;
+  await sb.from('deals').delete().eq('id', cur.id); $('dlg').close(); load();
+}
+function doPrint() {
+  const f = $('fd').value, t = $('td').value;
+  $('phInfo').textContent = `Period: ${f || 'start'} to ${t || 'today'} | Printed: ${new Date().toLocaleDateString()}`;
+  window.print();
+}
+start();
+</script></body></html>
