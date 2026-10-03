@@ -47,10 +47,10 @@ dialog::backdrop{background:#0006}
     <select id="fs" onchange="render()"><option value="">All status</option><option>pending</option><option>sold</option></select>
     <select id="ft" onchange="render()"><option value="">All types</option><option value="own">Own deals</option><option value="commission">Commission</option></select>
     <input id="fd" type="date" onchange="render()" title="From"><input id="td" type="date" onchange="render()" title="To">
-    <button onclick="openForm()">+ New deal</button><button class="g" onclick="doPrint()">🖨 Print report</button>
+    <button id="addBtn" onclick="openForm()">+ New deal</button><button class="g" onclick="doPrint()">🖨 Print report</button>
   </div>
   <div class="wrap"><table><thead><tr>
-    <th>Date</th><th>Type</th><th>Item</th><th>Buy</th><th>Sell</th><th>Fuel</th><th>Repair</th><th>Commission</th><th>OLX 1%</th><th>Profit</th><th>Welfare 5%</th><th>Status</th><th class="noprint">OLX paid</th><th class="noprint">Welfare paid</th><th class="noprint"></th>
+    <th>Date</th><th>Type</th><th>Item</th><th>Buy</th><th>Sell</th><th>Fuel</th><th>Repair</th><th>Commission</th><th>OLX 1%</th><th>Profit</th><th>Welfare 5%</th><th>Net (after OLX &amp; welfare)</th><th>Status</th><th>Paid by</th><th class="noprint">OLX paid</th><th class="noprint">Welfare paid</th><th class="noprint"></th>
   </tr></thead><tbody id="rows"></tbody></table></div>
 </main></div>
 
@@ -65,8 +65,10 @@ dialog::backdrop{background:#0006}
   <label>Selling price<input id="sell_price" type="number"></label>
   <label>Fuel cost<input id="fuel_cost" type="number"></label>
   <label>Repair cost<input id="repair_cost" type="number"></label>
-  <label class="com">Commission mode<select id="commission_mode"><option value="fixed">Fixed amount</option><option value="percent">% of selling price</option></select></label>
-  <label class="com">Commission value<input id="commission_value" type="number"></label>
+  <label class="com">Fixed commission<input id="commission_value" type="number"></label>
+  <label class="com">Client base price (everything above it is yours)<input id="commission_base" type="number"></label>
+  <label class="own">Buy payment<select id="buy_method"><option value="cash">Cash</option><option value="online">Online</option></select></label>
+  <label>Sell payment<select id="sell_method"><option value="cash">Cash</option><option value="online">Online</option></select></label>
   <label class="com">Client name<input id="client_name"></label>
   <label class="com">Client phone<input id="client_phone"></label>
   <label>Buy date<input id="buy_date" type="date"></label>
@@ -86,20 +88,23 @@ dialog::backdrop{background:#0006}
 // ===== PASTE YOUR SUPABASE KEYS (Project Settings > API) =====
 const SUPABASE_URL = 'https://ehwcncijcylkfedbpbdv.supabase.co';
 const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVod2NuY2lqY3lsa2ZlZGJwYmR2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTA5Mzg2NTksImV4cCI6MjEwNjUxNDY1OX0.bg5lSgbl5OKSFctPpFjSBCfzR9eKywMTUIFYao4zFpw';
+
+const OWNER_EMAIL = 'umaru0977@gmail.com'; // any other login = view only
 // =============================================================
 const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 const $ = id => document.getElementById(id);
-const FIELDS = ['deal_type','status','category','company','model','buy_price','sell_price','fuel_cost','repair_cost','commission_mode','commission_value','client_name','client_phone','buy_date','sell_date','notes'];
-const NUMS = ['buy_price','sell_price','fuel_cost','repair_cost','commission_value'];
-let deals = [], cur = null, photos = [], uid = null;
+const FIELDS = ['deal_type','status','category','company','model','buy_price','sell_price','fuel_cost','repair_cost','commission_value','commission_base','buy_method','sell_method','client_name','client_phone','buy_date','sell_date','notes'];
+const NUMS = ['buy_price','sell_price','fuel_cost','repair_cost','commission_value','commission_base'];
+let deals = [], cur = null, photos = [], uid = null, RO = false;
 const n = v => +v || 0, rs = v => 'Rs ' + Math.round(v).toLocaleString();
 const esc = s => (s || '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 
 // profit rules: own = sell - buy - fuel - repair - OLX | commission = commission - fuel - repair - OLX
 function calc(d) {
-  const sell = n(d.sell_price), olx = sell * 0.01;
-  const comm = d.deal_type === 'commission' ? (d.commission_mode === 'percent' ? sell * n(d.commission_value) / 100 : n(d.commission_value)) : 0;
-  const income = d.deal_type === 'commission' ? comm : sell - n(d.buy_price);
+  const sell = n(d.sell_price), isC = d.deal_type === 'commission';
+  const olx = isC ? 0 : sell * 0.01; // commission deals: client pays OLX
+  const comm = isC ? n(d.commission_value) + (n(d.commission_base) ? Math.max(0, sell - n(d.commission_base)) : 0) : 0; // fixed + all above base
+  const income = isC ? comm : sell - n(d.buy_price);
   const profit = income - n(d.fuel_cost) - n(d.repair_cost) - olx;
   const welfare = Math.max(profit, 0) * 0.05;
   return { olx, comm, profit, welfare, net: profit - welfare };
@@ -112,7 +117,9 @@ async function signIn() {
 async function start() {
   const { data } = await sb.auth.getSession();
   if (!data.session) { $('login').style.display = 'flex'; $('app').style.display = 'none'; return; }
-  uid = data.session.user.id; $('login').style.display = 'none'; $('app').style.display = 'block'; load();
+  uid = data.session.user.id; RO = data.session.user.email.toLowerCase() !== OWNER_EMAIL.toLowerCase();
+  if (RO) { $('addBtn').style.display = 'none'; document.querySelector('header b').textContent += ' (view only)'; }
+  $('login').style.display = 'none'; $('app').style.display = 'block'; load();
 }
 async function load() {
   const { data, error } = await sb.from('deals').select('*').order('created_at', { ascending: false });
@@ -142,13 +149,15 @@ function render() {
     return `<tr><td>${dateOf(d)}</td><td>${isC ? 'Commission' : 'Own'}</td>
     <td>${img}${esc(d.category)} ${esc(d.company)} ${esc(d.model)}${isC && d.client_name ? '<br><small>Client: ' + esc(d.client_name) + '</small>' : ''}</td>
     <td class="n">${isC ? '-' : rs(n(d.buy_price))}</td><td class="n">${rs(n(d.sell_price))}</td><td class="n">${rs(n(d.fuel_cost))}</td><td class="n">${rs(n(d.repair_cost))}</td>
-    <td class="n">${isC ? rs(c.comm) : '-'}</td><td class="n">${rs(c.olx)}</td>
+    <td class="n">${isC ? rs(c.comm) : '-'}</td><td class="n">${isC ? 'Client pays' : rs(c.olx)}</td>
     <td class="n ${c.profit < 0 ? 'neg' : 'pos'}">${rs(c.profit)}</td><td class="n">${rs(c.welfare)}</td>
+    <td class="n ${c.net < 0 ? 'neg' : 'pos'}"><b>${rs(c.net)}</b></td>
     <td><span class="tag ${d.status}">${d.status}</span></td>
-    <td class="noprint"><input type="checkbox" ${d.olx_paid ? 'checked' : ''} onchange="tog('${d.id}','olx_paid',this.checked)"></td>
-    <td class="noprint"><input type="checkbox" ${d.welfare_paid ? 'checked' : ''} onchange="tog('${d.id}','welfare_paid',this.checked)"></td>
-    <td class="noprint"><button onclick="openForm('${d.id}')">Edit</button></td></tr>`; }).join('')
-    || '<tr><td colspan="15">No deals</td></tr>';
+    <td>${isC ? '' : 'Buy: ' + (d.buy_method || '-') + '<br>'}Sell: ${d.sell_method || '-'}</td>
+    <td class="noprint"><input type="checkbox" ${RO || isC ? 'disabled' : ''} ${d.olx_paid ? 'checked' : ''} onchange="tog('${d.id}','olx_paid',this.checked)"></td>
+    <td class="noprint"><input type="checkbox" ${RO ? 'disabled' : ''} ${d.welfare_paid ? 'checked' : ''} onchange="tog('${d.id}','welfare_paid',this.checked)"></td>
+    <td class="noprint">${RO ? '' : `<button onclick="openForm('${d.id}')">Edit</button>`}</td></tr>`; }).join('')
+    || '<tr><td colspan="17">No deals</td></tr>';
 }
 async function tog(id, f, v) { await sb.from('deals').update({ [f]: v }).eq('id', id); const d = deals.find(x => x.id === id); d[f] = v; render(); }
 
@@ -159,7 +168,7 @@ function toggleType() {
 }
 function openForm(id) {
   cur = id ? deals.find(d => d.id === id) : null;
-  const d = cur || { deal_type: 'own', status: 'pending', commission_mode: 'fixed', buy_date: new Date().toISOString().slice(0, 10), photos: [] };
+  const d = cur || { deal_type: 'own', status: 'pending', buy_method: 'cash', sell_method: 'cash', buy_date: new Date().toISOString().slice(0, 10), photos: [] };
   FIELDS.forEach(f => $(f).value = d[f] ?? '');
   $('olx_paid').checked = !!d.olx_paid; $('welfare_paid').checked = !!d.welfare_paid;
   photos = [...(d.photos || [])]; showPhotos(); toggleType();
@@ -180,7 +189,7 @@ async function upload(inp) {
 async function save() {
   const row = {}; FIELDS.forEach(f => row[f] = NUMS.includes(f) ? n($(f).value) : ($(f).value || null));
   row.olx_paid = $('olx_paid').checked; row.welfare_paid = $('welfare_paid').checked; row.photos = photos;
-  row.deal_type = $('deal_type').value; row.status = $('status').value; row.commission_mode = $('commission_mode').value;
+  row.deal_type = $('deal_type').value; row.status = $('status').value;
   if (row.status === 'sold' && !row.sell_date) row.sell_date = new Date().toISOString().slice(0, 10);
   const { error } = cur ? await sb.from('deals').update(row).eq('id', cur.id) : await sb.from('deals').insert(row);
   if (error) return alert(error.message);
