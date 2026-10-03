@@ -61,13 +61,13 @@ dialog::backdrop{background:#0006}
   <label>Category<input id="category" list="cats"></label>
   <label>Company<input id="company" list="cos"></label>
   <label class="full">Model<input id="model"></label>
-  <label class="own">Buying price<input id="buy_price" type="number"></label>
+  <label>Buying price<input id="buy_price" type="number"></label>
   <label>Selling price<input id="sell_price" type="number"></label>
   <label>Fuel cost<input id="fuel_cost" type="number"></label>
   <label>Repair cost<input id="repair_cost" type="number"></label>
   <label class="com">Fixed commission<input id="commission_value" type="number"></label>
   <label class="com">Client base price (everything above it is yours)<input id="commission_base" type="number"></label>
-  <label class="own">Buy payment<select id="buy_method"><option value="cash">Cash</option><option value="online">Online</option></select></label>
+  <label>Buy payment<select id="buy_method"><option value="cash">Cash</option><option value="online">Online</option></select></label>
   <label>Sell payment<select id="sell_method"><option value="cash">Cash</option><option value="online">Online</option></select></label>
   <label class="com">Client name<input id="client_name"></label>
   <label class="com">Client phone<input id="client_phone"></label>
@@ -88,6 +88,7 @@ dialog::backdrop{background:#0006}
 // ===== PASTE YOUR SUPABASE KEYS (Project Settings > API) =====
 const SUPABASE_URL = 'https://ehwcncijcylkfedbpbdv.supabase.co';
 const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVod2NuY2lqY3lsa2ZlZGJwYmR2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTA5Mzg2NTksImV4cCI6MjEwNjUxNDY1OX0.bg5lSgbl5OKSFctPpFjSBCfzR9eKywMTUIFYao4zFpw';
+// =============================================================
 // =============================================================
 const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 const $ = id => document.getElementById(id);
@@ -132,25 +133,25 @@ function filtered() {
 }
 function render() {
   const list = filtered(), sold = list.filter(d => d.status === 'sold');
-  let T = { sales: 0, exp: 0, olx: 0, profit: 0, wel: 0, net: 0, olxDue: 0, welDue: 0 };
+  let T = { sales: 0, fuel: 0, repair: 0, olx: 0, profit: 0, wel: 0, net: 0, olxDue: 0, welDue: 0 };
   sold.forEach(d => { const c = calc(d);
-    T.sales += n(d.sell_price); T.exp += n(d.fuel_cost) + n(d.repair_cost); T.olx += c.olx; T.profit += c.profit; T.wel += c.welfare; T.net += c.net;
+    T.sales += n(d.sell_price); T.fuel += n(d.fuel_cost); T.repair += n(d.repair_cost); T.olx += c.olx; T.profit += c.profit; T.wel += c.welfare; T.net += c.net;
     if (!d.olx_paid) T.olxDue += c.olx; if (!d.welfare_paid) T.welDue += c.welfare; });
-  const stock = list.filter(d => d.status === 'pending' && d.deal_type === 'own').reduce((a, d) => a + n(d.buy_price), 0);
+  const stock = list.filter(d => d.status === 'pending').reduce((a, d) => a + n(d.buy_price), 0);
   const card = (l, v, cls = '') => `<div class="card"><small>${l}</small><b class="${cls}">${v}</b></div>`;
   $('cards').innerHTML = card('Sold', sold.length) + card('Pending', list.length - sold.length) + card('Stock value (pending)', rs(stock))
-    + card('Total sales', rs(T.sales)) + card('Fuel + repair', rs(T.exp)) + card('OLX fees', rs(T.olx)) + card('Profit', rs(T.profit), T.profit < 0 ? 'neg' : 'pos')
+    + card('Total sales', rs(T.sales)) + card('Fuel', rs(T.fuel)) + card('Repair', rs(T.repair)) + card('OLX fees', rs(T.olx)) + card('Profit', rs(T.profit), T.profit < 0 ? 'neg' : 'pos')
     + card('Welfare total', rs(T.wel)) + card('Net after welfare', rs(T.net), T.net < 0 ? 'neg' : 'pos') + card('OLX unpaid', rs(T.olxDue), 'neg') + card('Welfare unpaid', rs(T.welDue), 'neg');
   $('rows').innerHTML = list.map(d => { const c = calc(d), isC = d.deal_type === 'commission';
     const img = d.photos && d.photos[0] ? `<img class="th" src="${d.photos[0]}">` : '';
     return `<tr><td>${dateOf(d)}</td><td>${isC ? 'Commission' : 'Own'}</td>
     <td>${img}${esc(d.category)} ${esc(d.company)} ${esc(d.model)}${isC && d.client_name ? '<br><small>Client: ' + esc(d.client_name) + '</small>' : ''}</td>
-    <td class="n">${isC ? '-' : rs(n(d.buy_price))}</td><td class="n">${rs(n(d.sell_price))}</td><td class="n">${rs(n(d.fuel_cost))}</td><td class="n">${rs(n(d.repair_cost))}</td>
+    <td class="n">${rs(n(d.buy_price))}</td><td class="n">${rs(n(d.sell_price))}</td><td class="n">${rs(n(d.fuel_cost))}</td><td class="n">${rs(n(d.repair_cost))}</td>
     <td class="n">${isC ? rs(c.comm) : '-'}</td><td class="n">${isC ? 'Client pays' : rs(c.olx)}</td>
     <td class="n ${c.profit < 0 ? 'neg' : 'pos'}">${rs(c.profit)}</td><td class="n">${rs(c.welfare)}</td>
     <td class="n ${c.net < 0 ? 'neg' : 'pos'}"><b>${rs(c.net)}</b></td>
     <td><span class="tag ${d.status}">${d.status}</span></td>
-    <td>${isC ? '' : 'Buy: ' + (d.buy_method || '-') + '<br>'}Sell: ${d.sell_method || '-'}</td>
+    <td>Buy: ${d.buy_method || '-'}<br>Sell: ${d.sell_method || '-'}</td>
     <td class="noprint"><input type="checkbox" ${RO || isC ? 'disabled' : ''} ${d.olx_paid ? 'checked' : ''} onchange="tog('${d.id}','olx_paid',this.checked)"></td>
     <td class="noprint"><input type="checkbox" ${RO ? 'disabled' : ''} ${d.welfare_paid ? 'checked' : ''} onchange="tog('${d.id}','welfare_paid',this.checked)"></td>
     <td class="noprint">${RO ? '' : `<button onclick="openForm('${d.id}')">Edit</button>`}</td></tr>`; }).join('')
