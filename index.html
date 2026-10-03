@@ -88,8 +88,6 @@ dialog::backdrop{background:#0006}
 // ===== PASTE YOUR SUPABASE KEYS (Project Settings > API) =====
 const SUPABASE_URL = 'https://ehwcncijcylkfedbpbdv.supabase.co';
 const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVod2NuY2lqY3lsa2ZlZGJwYmR2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTA5Mzg2NTksImV4cCI6MjEwNjUxNDY1OX0.bg5lSgbl5OKSFctPpFjSBCfzR9eKywMTUIFYao4zFpw';
-
-const OWNER_EMAIL = 'umaru0977@gmail.com'; // any other login = view only
 // =============================================================
 const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 const $ = id => document.getElementById(id);
@@ -117,8 +115,7 @@ async function signIn() {
 async function start() {
   const { data } = await sb.auth.getSession();
   if (!data.session) { $('login').style.display = 'flex'; $('app').style.display = 'none'; return; }
-  uid = data.session.user.id; RO = data.session.user.email.toLowerCase() !== OWNER_EMAIL.toLowerCase();
-  if (RO) { $('addBtn').style.display = 'none'; document.querySelector('header b').textContent += ' (view only)'; }
+  uid = data.session.user.id;
   $('login').style.display = 'none'; $('app').style.display = 'block'; load();
 }
 async function load() {
