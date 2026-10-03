@@ -89,6 +89,7 @@ dialog::backdrop{background:#0006}
 const SUPABASE_URL = 'https://ehwcncijcylkfedbpbdv.supabase.co';
 const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVod2NuY2lqY3lsa2ZlZGJwYmR2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTA5Mzg2NTksImV4cCI6MjEwNjUxNDY1OX0.bg5lSgbl5OKSFctPpFjSBCfzR9eKywMTUIFYao4zFpw';
 // =============================================================
+// =============================================================
 const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 const $ = id => document.getElementById(id);
 const FIELDS = ['deal_type','status','category','company','model','buy_price','sell_price','fuel_cost','repair_cost','commission_value','commission_base','buy_method','sell_method','client_name','client_phone','buy_date','sell_date','notes'];
@@ -136,12 +137,11 @@ function render() {
   sold.forEach(d => { const c = calc(d);
     T.sales += n(d.sell_price); T.fuel += n(d.fuel_cost); T.repair += n(d.repair_cost); T.olx += c.olx; T.profit += c.profit; T.wel += c.welfare; T.net += c.net;
     if (!d.olx_paid) T.olxDue += c.olx; if (!d.welfare_paid) T.welDue += c.welfare; });
-  const netAll = list.reduce((a, d) => a + calc(d).net, 0); // every row, same as the Net column
   const stock = list.filter(d => d.status === 'pending').reduce((a, d) => a + n(d.buy_price), 0);
   const card = (l, v, cls = '') => `<div class="card"><small>${l}</small><b class="${cls}">${v}</b></div>`;
   $('cards').innerHTML = card('Sold', sold.length) + card('Pending', list.length - sold.length) + card('Stock value (pending)', rs(stock))
     + card('Total sales', rs(T.sales)) + card('Fuel', rs(T.fuel)) + card('Repair', rs(T.repair)) + card('OLX fees', rs(T.olx)) + card('Profit', rs(T.profit), T.profit < 0 ? 'neg' : 'pos')
-    + card('Welfare total', rs(T.wel)) + card('Net after welfare', rs(T.net), T.net < 0 ? 'neg' : 'pos') + card('Net (after OLX & welfare)', rs(netAll), netAll < 0 ? 'neg' : 'pos') + card('Net (after OLX & welfare)', rs(T.net), T.net < 0 ? 'neg' : 'pos') + card('OLX unpaid', rs(T.olxDue), 'neg') + card('Welfare unpaid', rs(T.welDue), 'neg');
+    + card('Welfare total', rs(T.wel)) + card('Net after welfare', rs(T.net), T.net < 0 ? 'neg' : 'pos') + card('OLX unpaid', rs(T.olxDue), 'neg') + card('Welfare unpaid', rs(T.welDue), 'neg');
   $('rows').innerHTML = list.map(d => { const c = calc(d), isC = d.deal_type === 'commission';
     const img = d.photos && d.photos[0] ? `<img class="th" src="${d.photos[0]}">` : '';
     return `<tr><td>${dateOf(d)}</td><td>${isC ? 'Commission' : 'Own'}</td>
